@@ -1,0 +1,58 @@
+name: Make Shorts
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "YouTube link (or a direct video file link)"
+        required: true
+      count:
+        description: "How many Shorts"
+        default: "3"
+      style:
+        description: "Caption style: bold, green, red, minimal"
+        default: "bold"
+      lang:
+        description: "Language: auto, en, ur, hi, ar"
+        default: "auto"
+
+jobs:
+  shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Unpack ShortSmith
+        run: |
+          curl -L -o shortsmith-code.zip https://huggingface.co/datasets/asad129/shortsmith-code/resolve/main/shortsmith-code.zip
+          unzip -o -q shortsmith-code.zip
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          pip install -q -U yt-dlp
+          pip install -q -r requirements-cli.txt || pip install -q faster-whisper opencv-python-headless numpy requests
+      - name: Make Shorts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          SRC="${{ inputs.url }}"
+          case "$SRC" in
+            *youtube.com*|*youtu.be*) ;;
+            http*) curl -L -o input.mp4 "$SRC" && SRC=input.mp4 ;;
+          esac
+          EXTRA=""
+          if [ -n "$GEMINI_API_KEY" ]; then EXTRA="--ai --provider gemini"; fi
+          LANGARG=""
+          if [ "${{ inputs.lang }}" != "auto" ]; then LANGARG="--lang ${{ inputs.lang }}"; fi
+          python -m clipper.cli "$SRC" -n "${{ inputs.count }}" --style "${{ inputs.style }}" --whisper small $LANGARG $EXTRA -o shorts
+      - name: Upload Shorts
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-shorts
+          path: |
+            shorts/**/*.mp4
+            shorts/**/*.srt
+          retention-days: 7
